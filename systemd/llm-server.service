@@ -1,0 +1,100 @@
+[Unit]
+Description=Local language model server
+After=network-online.target
+Wants=network-online.target
+# The unit assumes the NVIDIA kernel module is already loaded and the
+# /dev/nvidia* nodes already exist. NoNewPrivileges= below stops the
+# runtime from using the setuid nvidia-modprobe helper to create them on
+# demand, so run nvidia-persistenced. Ordering after a driver unit does
+# not make the nodes appear on a host where the module failed to build.
+
+# A model server that cannot allocate memory will fail repeatedly. Give up
+# rather than restart forever against a host that has changed underneath it.
+# These two settings belong in [Unit] on systemd 229 and later.
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=exec
+# Type=exec marks the unit started once the process has executed, not once
+# the model has loaded. Readiness is the runtime's /health endpoint.
+# After= orders startup only; it does not wait for a listening socket.
+User=llm-server
+Group=llm-server
+WorkingDirectory=/opt/llm-server
+# Replace with the runtime and flags recorded in the deployment note. The
+# listen address is deliberately loopback: publish through a reverse proxy
+# that terminates TLS and authenticates the caller.
+ExecStart=/opt/llm-server/bin/llama-server \
+    --model /var/lib/llm-server/models/current.gguf \
+    --host 127.0.0.1 \
+    --port 8080 \
+    --ctx-size 32768 \
+    --parallel 4 \
+    --metrics
+Restart=on-failure
+RestartSec=10s
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+ProtectSystem=strict
+ProtectHome=yes
+ProtectProc=invisible
+ProcSubset=all
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# PrivateDevices=yes is deliberately absent. It replaces /dev with a minimal
+# private instance and removes the accelerator nodes, so the server starts
+# without a GPU, or fails outright, depending on the runtime. Name them instead.
+DevicePolicy=closed
+DeviceAllow=/dev/nvidiactl rw
+DeviceAllow=/dev/nvidia-uvm rw
+DeviceAllow=/dev/nvidia-uvm-tools rw
+DeviceAllow=/dev/nvidia0 rw
+# ProcSubset=all is required because some runtimes read /proc entries that
+# ProcSubset=pid hides. Tighten it only after testing model load on the host.
+
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressAllow=localhost
+IPAddressDeny=any
+# The server needs no outbound network once the weights are on disk. Fetch
+# models in a separate, reviewed step rather than at service start.
+
+StateDirectory=llm-server
+RuntimeDirectory=llm-server
+ReadOnlyPaths=/var/lib/llm-server/models
+
+TasksMax=256
+LimitNOFILE=4096
+# LimitMEMLOCK is only needed if the runtime is started with --mlock.
+# Leave the default unless that flag is in ExecStart.
+#LimitMEMLOCK=infinity
+# MemoryMax is intentionally unset: a host-memory cap that clips the pinned
+# staging buffers of a GPU runtime produces an out-of-memory kill during load
+# rather than a clear configuration error. Set it only after measuring the
+# resident set of a completed model load on this host.
+# No TimeoutStartSec=: with Type=exec it would not cover model loading.
+TimeoutStopSec=60s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=llm-server
+
+[Install]
+WantedBy=multi-user.target

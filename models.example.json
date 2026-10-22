@@ -1,0 +1,14 @@
+{
+  "name": "example-8b-instruct-q4",
+  "attention": "gqa",
+  "num_hidden_layers": 32,
+  "num_key_value_heads": 8,
+  "head_dim": 128,
+  "weight_file_bytes": 4920000000,
+  "_source": "Illustrative values. Replace every field from the model you actually intend to serve: num_hidden_layers, num_key_value_heads and head_dim come from that model's own configuration file, and weight_file_bytes is the measured total of the downloaded weight files. Do not plan hardware from these numbers.",
+  "_alternative_when_not_yet_downloaded": {
+    "parameter_count": 8030000000,
+    "bits_per_weight": 4.5,
+    "_note": "Only for a first sizing pass. The tool marks the result as estimated because a quantised file mixes element widths between tensors."
+  }
+}
